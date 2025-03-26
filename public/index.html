@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Image Transformation</title>
+    <style>
+        :root {
+            --primary-color: #4285f4;
+            --secondary-color: #34a853;
+            --tertiary-color: #fbbc05;
+            --accent-color: #ea4335;
+            --dark-bg: #202124;
+            --light-bg: #f8f9fa;
+            --card-bg: #303134;
+            --text-color: #e8eaed;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Google Sans', Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            margin-bottom: 40px;
+            color: var(--tertiary-color);
+        }
+
+        .input-section {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #5f6368;
+            background-color: #3c4043;
+            color: var(--text-color);
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            font-weight: 500;
+        }
+
+        .file-input-label:hover {
+            background-color: #3367d6;
+        }
+
+        .file-name {
+            margin-top: 8px;
+            font-size: 0.9rem;
+            color: #9aa0a6;
+        }
+
+        .image-preview {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .button:hover {
+            background-color: #2a8a44;
+        }
+
+        .button:disabled {
+            background-color: #5f6368;
+            cursor: not-allowed;
+        }
+
+        .button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .results-section {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .results-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .result-card {
+            background-color: #3c4043;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.3s;
+            position: relative;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .result-card img {
+            width: 100%;
+            height: 300px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .result-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .result-card:hover .result-controls {
+            opacity: 1;
+        }
+
+        .control-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid var(--primary-color);
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .error-message {
+            background-color: var(--accent-color);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .hide {
+            display: none;
+        }
+
+        .show {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            .results-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gemini Image Transformation</h1>
+        <div class="subtitle">Upload an image and transform it with Gemini AI</div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="input-section">
+            <div class="form-group">
+                <label for="imageUpload">Reference Image</label>
+                <label class="file-input-label" for="imageUpload">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Choose Image
+                </label>
+                <input type="file" id="imageUpload" accept="image/*">
+                <div class="file-name" id="fileName">No file chosen</div>
+                <div class="image-preview">
+                    <img id="imagePreview" src="" alt="Image Preview">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="promptInput">Transformation Prompt</label>
+                <textarea id="promptInput" rows="3" placeholder="Enter your transformation prompt (e.g., 'turn my character into a Studio Ghibli character')">turn my character into a studio ghibli character</textarea>
+            </div>
+
+            <div class="button-container">
+                <button id="generateButton" class="button" disabled>Generate Transformations</button>
+            </div>
+        </div>
+
+        <div class="results-section hide" id="resultsSection">
+            <h2>Generated Images</h2>
+            <div class="results-container" id="resultsContainer">
+                <!-- Results will be added here by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Generating transformations...</div>
+    </div>
+
+    <script>
+        // DOM elements
+        const imageUpload = document.getElementById('imageUpload');
+        const fileName = document.getElementById('fileName');
+        const imagePreview = document.getElementById('imagePreview');
+        const promptInput = document.getElementById('promptInput');
+        const generateButton = document.getElementById('generateButton');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Selected file
+        let selectedFile = null;
+
+        // Event listeners
+        imageUpload.addEventListener('change', handleFileSelect);
+        generateButton.addEventListener('click', generateImages);
+
+        // Handle file selection
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                fileName.textContent = file.name;
+                
+                // Preview the image
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    validateForm();
+                };
+                reader.readAsDataURL(file);
+            } else {
+                resetFileInput();
+            }
+        }
+
+        // Reset file input
+        function resetFileInput() {
+            selectedFile = null;
+            fileName.textContent = 'No file chosen';
+            imagePreview.src = '';
+            imagePreview.style.display = 'none';
+            validateForm();
+        }
+
+        // Validate form to enable/disable generate button
+        function validateForm() {
+            generateButton.disabled = !selectedFile;
+        }
+
+        // Generate images
+        async function generateImages() {
+            if (!selectedFile) {
+                showError('Please select an image first.');
+                return;
+            }
+
+            const prompt = promptInput.value.trim() || 'turn my character into a studio ghibli character';
+            
+            // Show loading overlay
+            loadingOverlay.style.display = 'flex';
+            hideError();
+            
+            // Create form data
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+            formData.append('prompt', prompt);
+            formData.append('numImages', '6');
+
+            try {
+                // Call the API
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to generate images');
+                }
+
+                const data = await response.json();
+                displayResults(data.images);
+                
+            } catch (error) {
+                console.error('Error generating images:', error);
+                showError(error.message || 'An error occurred during image generation');
+            } finally {
+                // Hide loading overlay
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        // Display results
+        function displayResults(images) {
+            // Clear previous results
+            resultsContainer.innerHTML = '';
+            
+            if (images && images.length > 0) {
+                // Show results section
+                resultsSection.classList.remove('hide');
+                resultsSection.classList.add('show');
+                
+                // Create result cards
+                images.forEach((imagePath, index) => {
+                    // Create result card
+                    const card = document.createElement('div');
+                    card.className = 'result-card';
+                    
+                    // Create image
+                    const img = document.createElement('img');
+                    img.src = imagePath;
+                    img.alt = `Generated Image ${index + 1}`;
+                    img.loading = 'lazy';
+                    
+                    // Create controls
+                    const controls = document.createElement('div');
+                    controls.className = 'result-controls';
+                    
+                    // Download button
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'control-button';
+                    downloadBtn.textContent = 'Download';
+                    downloadBtn.addEventListener('click', () => downloadImage(imagePath));
+                    
+                    // Append elements
+                    controls.appendChild(downloadBtn);
+                    card.appendChild(img);
+                    card.appendChild(controls);
+                    resultsContainer.appendChild(card);
+                });
+            } else {
+                showError('No images were generated. Please try again.');
+            }
+        }
+
+        // Download image
+        function downloadImage(imagePath) {
+            const link = document.createElement('a');
+            link.href = imagePath;
+            link.download = `gemini-generation-${Date.now()}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        // Hide error message
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+    </script>
+</body>
+</html> 
