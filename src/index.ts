@@ -104,62 +104,135 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
       fs.mkdirSync(resultsDir, { recursive: true });
     }
 
-    // Start the chat session
-    const chatSession = model.startChat({
-      generationConfig,
-      history: [
-        {
-          role: "user",
-          parts: [
-            {
-              fileData: {
-                mimeType: file.mimeType,
-                fileUri: file.uri,
-              },
-            },
-            { text: prompt },
-          ],
-        },
-      ],
-    });
+    // We'll create independent chat sessions for each image in the generateImage function
 
-    // Request the specified number of images
-    const generatedImages = [];
-    
-    // For multiple images, we'll send multiple requests
-    for (let i = 0; i < numImages; i++) {
+    // Define a function to generate a single image independently
+    const generateImage = async (index: number): Promise<string | null> => {
       try {
-        console.log(`src/index.ts: Generating image ${i + 1} of ${numImages}`);
-        const variation = i > 0 ? `Create a different variation. This is variation ${i + 1}.` : prompt;
+        console.log(`src/index.ts: Starting generation of image ${index + 1} of ${numImages}`);
         
-        const result = await chatSession.sendMessage(variation);
+        // Create a new chat session for each image, structured like the example
+        console.log(`src/index.ts: Creating new chat session with history for image ${index + 1}`);
+        
+        const fullPrompt = prompt;
+        console.log(`src/index.ts: Using prompt for image ${index + 1}: "${fullPrompt}"`);
+        
+        // Create chat session with history following the example structure
+        const chatSession = model.startChat({
+          generationConfig,
+          history: [
+            {
+              role: "user",
+              parts: [
+                {
+                  fileData: {
+                    mimeType: file.mimeType,
+                    fileUri: file.uri,
+                  },
+                },
+                { text: fullPrompt },
+              ],
+            },
+          ],
+        });
+        
+        // Send a simple message to trigger the generation
+        console.log(`src/index.ts: Sending generation trigger message for image ${index + 1}`);
+        const result = await chatSession.sendMessage("Generate an image based on the prompt and file");
+        
+        console.log(`src/index.ts: Received response for image ${index + 1}`);
         const candidates = result.response.candidates || [];
+        console.log(`src/index.ts: Found ${candidates.length} candidates in response for image ${index + 1}`);
         
+        // Log the text response if available
+        try {
+          const textResponse = result.response.text();
+          console.log(`src/index.ts: Text response for image ${index + 1}: "${textResponse}"`);
+        } catch (err) {
+          console.log(`src/index.ts: No text response available for image ${index + 1}`);
+        }
+        
+        // Log response structure (removing potentially large data properties)
+        const responseClone = JSON.parse(JSON.stringify(result.response));
+        // Remove potentially large binary data before logging
+        if (responseClone.candidates) {
+          responseClone.candidates.forEach((candidate: any) => {
+            if (candidate?.content?.parts) {
+              candidate.content.parts.forEach((part: any) => {
+                if (part.inlineData && part.inlineData.data) {
+                  part.inlineData.data = `[BINARY_DATA_LENGTH:${part.inlineData.data.length}]`;
+                }
+              });
+            }
+          });
+        }
+        console.log(`src/index.ts: Response structure for image ${index + 1}:`, JSON.stringify(responseClone, null, 2));
+        
+        // Process the response
         for (let candidate_index = 0; candidate_index < candidates.length; candidate_index++) {
           const parts = candidates[candidate_index]?.content?.parts || [];
+          console.log(`src/index.ts: Processing ${parts.length} parts in candidate ${candidate_index} for image ${index + 1}`);
+          
           for (let part_index = 0; part_index < parts.length; part_index++) {
             const part = parts[part_index];
+            console.log(`src/index.ts: Part ${part_index} type:`, part.text ? 'text' : part.inlineData ? 'inlineData' : 'unknown');
+            
+            if (part.text) {
+              console.log(`src/index.ts: Part ${part_index} has text content: "${part.text.substring(0, 100)}${part.text.length > 100 ? '...' : ''}"`);
+            }
             
             if (part.inlineData) {
-              const uniqueId = `${Date.now()}-${i}-${candidate_index}-${part_index}`;
+              console.log(`src/index.ts: Found inline data in part ${part_index} for image ${index + 1}`);
+              const uniqueId = `${Date.now()}-${index}-${candidate_index}-${part_index}`;
               const extension = part.inlineData.mimeType.split('/')[1];
               const filename = `img-${uniqueId}.${extension}`;
               const filePath = path.join(resultsDir, filename);
               
               // Save the image to the public directory
               fs.writeFileSync(filePath, Buffer.from(part.inlineData.data, 'base64'));
-              console.log(`src/index.ts: Saved generated image to ${filePath}`);
+              console.log(`src/index.ts: Saved generated image ${index + 1} to ${filePath}`);
               
-              // Add the image path to the results
-              generatedImages.push(`/results/${filename}`);
+              // Return the image path
+              return `/results/${filename}`;
             }
           }
         }
-      } catch (error) {
-        console.error(`src/index.ts: Error generating image ${i + 1}:`, error);
-        // Continue with other images even if one fails
+        
+        // No image was found in the response
+        console.error(`src/index.ts: No image data found in response for image ${index + 1}`);
+        return null;
+      } catch (error: any) {
+        console.error(`src/index.ts: Error generating image ${index + 1}:`, error);
+        // Try to extract more detailed error information
+        if (error.errorDetails) {
+          console.error(`src/index.ts: Error details for image ${index + 1}:`, error.errorDetails);
+        }
+        return null;
       }
-    }
+    };
+    
+    // Function to execute all image generation promises in parallel
+    const executeAllInParallel = async (): Promise<(string | null)[]> => {
+      console.log(`src/index.ts: Setting up parallel execution for all ${numImages} images at once`);
+      
+      // Create promises for all images
+      const generationPromises = Array.from(
+        { length: numImages }, 
+        (_, i) => generateImage(i)
+      );
+      
+      // Execute all promises concurrently
+      console.log(`src/index.ts: Executing all ${numImages} image generations in parallel`);
+      return Promise.all(generationPromises);
+    };
+    
+    // Execute all generation processes in parallel
+    console.log(`src/index.ts: Starting parallel image generation for ${numImages} images`);
+    const results = await executeAllInParallel();
+    console.log(`src/index.ts: All image generation completed, had ${results.filter(Boolean).length} successful generations`);
+    
+    // Filter out failed generations (null values)
+    const generatedImages = results.filter(path => path !== null) as string[];
 
     // Clean up the temporary uploaded file
     try {

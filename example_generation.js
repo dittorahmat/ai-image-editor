@@ -46,7 +46,7 @@ const {
     // TODO Make these files available on the local file system
     // You may need to update the file paths
     const files = [
-      await uploadToGemini("image (1).png", "image/png"),
+      await uploadToGemini("1zsbEhvDrP2JLVFcuhGwdSqDDjnZJ_sgF", "application/octet-stream"),
     ];
   
     // TODO: Following code needs to be updated for client-side apps.
@@ -54,7 +54,7 @@ const {
     try {
       let filename = '';
       filename = 'input_0';
-      fs.writeFileSync(filename, Buffer.from("*insert_base64_image_here*", 'base64'));
+      fs.writeFileSync(filename, Buffer.from("base64_text_here", 'base64'));
       console.log(`Input written to: ${filename}`);
       inlineFiles.push(await uploadToGemini(filename, "image/png"));
     } catch (err) {

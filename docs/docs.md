@@ -129,75 +129,75 @@ const model = genAI.getGenerativeModel({
   model: "gemini-2.0-flash-exp-image-generation",
 });
 
-const chatSession = model.startChat({
-  generationConfig,
-  history: [
-    {
-      role: "user",
-      parts: [
-        {
-          fileData: {
-            mimeType: file.mimeType,
-            fileUri: file.uri,
-          },
-        },
-        { text: prompt },
-      ],
-    },
-  ],
-});
+// The model is used to create independent chat sessions for each image
 ```
 
 This code:
 - Initializes the Gemini API with the key from environment variables
 - Creates a file manager for uploading images to Gemini
 - Configures the specific model (gemini-2.0-flash-exp-image-generation)
-- Creates a chat session with the uploaded image and user prompt
 
-#### Image Generation Loop
+#### Parallel Image Generation
 
 ```typescript
-for (let i = 0; i < numImages; i++) {
+// Define a function to generate a single image independently
+const generateImage = async (index: number): Promise<string | null> => {
   try {
-    console.log(`src/index.ts: Generating image ${i + 1} of ${numImages}`);
-    const variation = i > 0 ? `Create a different variation. This is variation ${i + 1}.` : prompt;
+    // Create a new chat session with history for each image
+    const chatSession = model.startChat({
+      generationConfig,
+      history: [
+        {
+          role: "user",
+          parts: [
+            {
+              fileData: {
+                mimeType: file.mimeType,
+                fileUri: file.uri,
+              },
+            },
+            { text: prompt },
+          ],
+        },
+      ],
+    });
     
-    const result = await chatSession.sendMessage(variation);
-    const candidates = result.response.candidates || [];
+    // Send a simple message to trigger the generation
+    const result = await chatSession.sendMessage("Generate an image based on the prompt and file");
     
-    for (let candidate_index = 0; candidate_index < candidates.length; candidate_index++) {
-      const parts = candidates[candidate_index]?.content?.parts || [];
-      for (let part_index = 0; part_index < parts.length; part_index++) {
-        const part = parts[part_index];
-        
-        if (part.inlineData) {
-          const uniqueId = `${Date.now()}-${i}-${candidate_index}-${part_index}`;
-          const extension = part.inlineData.mimeType.split('/')[1];
-          const filename = `img-${uniqueId}.${extension}`;
-          const filePath = path.join(resultsDir, filename);
-          
-          // Save the image to the public directory
-          fs.writeFileSync(filePath, Buffer.from(part.inlineData.data, 'base64'));
-          console.log(`src/index.ts: Saved generated image to ${filePath}`);
-          
-          // Add the image path to the results
-          generatedImages.push(`/results/${filename}`);
-        }
-      }
-    }
+    // Process the response and save any generated images
+    // Return the image path or null if generation failed
   } catch (error) {
-    console.error(`src/index.ts: Error generating image ${i + 1}:`, error);
-    // Continue with other images even if one fails
+    // Handle errors
+    return null;
   }
-}
+};
+
+// Execute all image generations in parallel
+const executeAllInParallel = async (): Promise<(string | null)[]> => {
+  // Create promises for all images
+  const generationPromises = Array.from(
+    { length: numImages }, 
+    (_, i) => generateImage(i)
+  );
+  
+  // Execute all promises concurrently
+  return Promise.all(generationPromises);
+};
+
+// Start the parallel generation process
+const results = await executeAllInParallel();
+
+// Filter out failed generations (null values)
+const generatedImages = results.filter(path => path !== null) as string[];
 ```
 
 This code:
-- Loops to generate the requested number of images
-- Requests a different variation for each iteration after the first
-- Processes the response to extract images
-- Saves each generated image with a unique filename
-- Continues processing even if individual generations fail
+- Creates independent chat sessions for each image generation
+- Sets up proper history with the uploaded image and prompt
+- Processes all image generations in parallel for maximum throughput
+- Handles errors gracefully, allowing other generations to continue even if some fail
+- Filters out failed generations from the final results
 
 ## 5. Frontend Architecture
 
@@ -282,8 +282,8 @@ The complete data flow through the application is:
 3. **Backend Processing**:
    - Receives and validates the request
    - Uploads the image to Gemini API
-   - Creates a chat session with the model
-   - Generates multiple image variations
+   - Creates independent chat sessions for each requested image
+   - Generates all images in parallel
    - Saves generated images to public/results directory
    - Cleans up temporary uploaded file
 
@@ -406,11 +406,12 @@ Potential areas for expansion:
 
 1. **Generation Time**:
    - Image generation can take 5-30 seconds depending on complexity
-   - Multiple images are generated sequentially, not in parallel
+   - Images are generated in parallel, which improves throughput but may impact API rate limits
 
 2. **API Constraints**:
    - Limited by Gemini API quotas and rate limits
    - Dependent on the capabilities of the underlying model
+   - Parallel requests may trigger rate limiting if API usage is high
 
 3. **Storage Management**:
    - No automatic cleanup of generated images
@@ -418,4 +419,4 @@ Potential areas for expansion:
 
 4. **Error Handling**:
    - Basic error handling for common scenarios
-   - Could be enhanced with more specific error messages
+   - Each image generation is independent, so some may succeed while others fail
