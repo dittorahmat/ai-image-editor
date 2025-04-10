@@ -4,39 +4,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Baking with the Gemini API</title>
+  <title>Image Editor with the Gemini API</title>
 </head>
 
 <body>
   <main>
-    <h1>Baking with the Gemini API</h1>
-    <form>
-      <div class="image-picker">
-        <label class="image-choice">
-          <input type="radio" checked name="chosen-image" value="/baked_goods_1.jpg">
-          <img src="/baked_goods_1.jpg">
-        </label>
-        <label class="image-choice">
-          <input type="radio" name="chosen-image" value="/baked_goods_2.jpg">
-          <img src="/baked_goods_2.jpg">
-        </label>
-        <label class="image-choice">
-          <input type="radio" name="chosen-image" value="/baked_goods_3.jpg">
-          <img src="/baked_goods_3.jpg">
-        </label>
+    <h1>Image Editor with the Gemini API</h1>
+    <div class="image-sections">
+      <div class="image-section" id="original-image-section">
+        <h2>Original Image</h2>
+        <img id="original-image-display" src="" alt="Original Image">
       </div>
-      <div class="prompt-box">
-        <label>
-          <input name="prompt" placeholder="Enter instructions here" type="text"
-            value="Provide an example recipe for the baked goods in the image">
-        </label>
-        <button type="submit">Go</button>
+      <div class="image-section" id="edited-image-section">
+        <h2>Edited Image</h2>
+        <img id="edited-image-display" src="" alt="Edited Image">
       </div>
-    </form>
-    <p class="output">(Results will appear here)</p>
+    </div>
+    <div class="upload-section">
+      <!-- Form is still useful for submitting the prompt -->
+      <form id="edit-form">
+         <!-- Removed image picker div -->
+         <!-- Add File Upload Input -->
+         <div class="file-upload-area">
+            <label for="image-upload">Upload Image:</label>
+            <input type="file" id="image-upload" name="image-upload" accept="image/png, image/jpeg, image/webp">
+         </div>
+         <!-- Prompt input remains -->
+        <div class="prompt-box">
+          <label>
+            <input name="prompt" placeholder="Enter instructions (or 'UNDO')" type="text">
+          </label>
+          <button type="submit">Edit</button>
+        </div>
+      </form>
+    </div>
+    <div class="save-section">
+      <button id="save-button">Save</button>
+      <select id="format-select">
+        <option value="jpg">JPG</option>
+        <option value="png">PNG</option>
+      </select>
+    </div>
+    <p class="output">(Upload an image and enter instructions)</p>
   </main>
-
   <script type="module" src="/main.js"></script>
+  <script type="module" src="/gemini-api-banner.js"></script>
 </body>
 
 </html>
