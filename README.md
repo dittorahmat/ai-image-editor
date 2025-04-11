@@ -2,7 +2,7 @@
 
 ## Overview
 
-This web application provides a simple interface for editing images using text prompts powered by the Google Gemini API. Users can upload an image, provide instructions for edits, view the original and edited versions side-by-side, undo changes, and save the final result. All image processing relies on the Gemini API, and image data is temporarily stored in the browser's local storage.
+This web application provides a simple interface for editing images using text prompts powered by the Google Gemini API. It utilizes the `@google/genai` JavaScript library to interact with the Gemini API. Users can upload an image, provide instructions for edits, view the original and edited versions side-by-side, undo changes, and save the final result. All image processing relies on the Gemini API, and image data is temporarily stored in the browser's local storage.
 
 ## Features
 
@@ -37,17 +37,13 @@ To run this application locally, you need Node.js and npm (or a compatible packa
         ```
     *   Replace `YOUR_API_KEY` with your actual API key. You can obtain one from Google AI Studio.
 
-4.  **Configure Gemini Model:**
-    *   **IMPORTANT:** Open the `main.js` file.
-    *   Locate the section where the Gemini model is initialized (around line 227).
-    *   Replace the placeholder model name (`'gemini-pro-vision'`) with the actual name of a Gemini model that supports image editing (taking an image and text prompt as input and returning an edited image). Check the latest [Google AI Gemini documentation](https://ai.google.dev/docs) for suitable models (e.g., `gemini-1.5-pro-latest` might be capable, or a specialized model if available).
+4.  **Gemini Model Configuration:**
+    *   Open the `main.js` file.
+    *   Locate the section where the Gemini model is initialized (around line 179).
+    *   Ensure the model name is set to `'gemini-2.0-flash-exp-image-generation'`, which is currently configured for image editing.
         ```javascript
         // main.js
-        const model = genAI.getGenerativeModel({
-          // *** Replace with the correct model name ***
-          model: 'YOUR_IMAGE_EDITING_MODEL_NAME', // e.g., 'gemini-1.5-pro-latest'
-          // ... safetySettings ...
-        });
+        const modelName = 'gemini-2.0-flash-exp-image-generation';
         ```
 
 ## Running the App
@@ -71,6 +67,6 @@ To run this application locally, you need Node.js and npm (or a compatible packa
 ## Important Notes
 
 *   **API Costs:** Using the Gemini API may incur costs based on usage. Be sure to check the pricing details for the specific model you configure.
-*   **Model Compatibility:** The core editing functionality relies entirely on the capabilities of the configured Gemini model. Ensure you are using a model designed for image editing tasks. The placeholder model (`gemini-pro-vision`) is likely *not* suitable for generating edited images and **must be replaced**.
+*   **Model Compatibility:** The core editing functionality relies on the capabilities of the Gemini model `'gemini-2.0-flash-exp-image-generation'`. This model is configured for image editing tasks. Ensure that this model or a similarly capable model is used for optimal performance.
 *   **Local Storage Limitations:** Image data is stored only in your browser's local storage, which has size limits and is not persistent if cleared by the user or browser.
 *   **Error Handling:** Basic error handling is included, but API responses or unexpected issues might require further debugging via the browser's developer console.
