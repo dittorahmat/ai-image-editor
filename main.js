@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
+import { GoogleGenAI } from "@google/genai"; // Changed import
 import Base64 from 'base64-js';
 import MarkdownIt from 'markdown-it';
 import { maybeShowApiKeyBanner } from './gemini-api-banner';
@@ -174,65 +174,85 @@ if (form) {
       const [header, base64Data] = imageToEditDataUrl.split(',');
       const mimeType = header.match(/:(.*?);/)[1];
 
-      // Prepare the request for Gemini API
-      const genAI = new GoogleGenerativeAI(API_KEY);
-      const model = genAI.getGenerativeModel({
-        // >>>>>>>>>>>> Using the specified model <<<<<<<<<<<<
-        model: 'gemini-2.0-flash-exp-image-generation', // Updated model name
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-          // Add other necessary safety settings if needed
-        ],
-      });
+      // --- Prepare request based on image.js logic ---
+      const genAI = new GoogleGenAI({ apiKey: API_KEY }); // Changed instantiation
+      const modelName = 'gemini-2.0-flash-exp-image-generation'; // As used in image.js
 
+      // Prepare the content parts (simpler structure from image.js)
       const contents = [
+        { text: userPrompt },
         {
-          role: 'user',
-          parts: [
-            { inline_data: { mime_type: mimeType, data: base64Data } },
-            { text: userPrompt },
-          ],
+          inlineData: { // Use inlineData (camelCase) as in image.js
+            mimeType: mimeType,
+            data: base64Data,
+          },
         },
       ];
 
-      // Call the API
-      console.log("Sending request to Gemini model:", model.model);
-      const result = await model.generateContent({ contents });
-      const response = result.response;
+      // Prepare the config (from image.js)
+      const config = {
+        responseModalities: ["Text", "Image"], // Include Text and Image
+      };
 
-      // Process IMAGE response
-      if (response && response.candidates && response.candidates[0] &&
-          response.candidates[0].content && response.candidates[0].content.parts &&
-          response.candidates[0].content.parts[0] && response.candidates[0].content.parts[0].inline_data)
-      {
-          const imageData = response.candidates[0].content.parts[0].inline_data;
-          const newMimeType = imageData.mime_type;
-          const newBase64Data = imageData.data;
-          const newImageDataUrl = `data:${newMimeType};base64,${newBase64Data}`;
+      // Call the API using the structure from image.js
+      console.log("Sending request to Gemini model:", modelName);
+      console.log("Calling generateContent with model, contents, and config"); // Updated log
+      // Call generateContent directly on ai.models
+      const result = await genAI.models.generateContent({
+        model: modelName,
+        contents: contents,
+        config: config, // Pass config along with model and contents
+      });
 
-          const stateBeforeEdit = localStorage.getItem(EDITED_IMAGE_KEY) || localStorage.getItem(ORIGINAL_IMAGE_KEY);
-          if (stateBeforeEdit) {
-             localStorage.setItem(UNDO_IMAGE_KEY, stateBeforeEdit);
-             console.log("Stored previous state to UNDO buffer.");
+      console.log("Raw API result object:", result); // Log the raw result
+
+      // --- Process response based on image.js logic ---
+      // Adjust response handling: access candidates directly from result
+      const response = result;
+      console.log("Processing API response object:", response);
+      let imageGenerated = false;
+
+      if (response && response.candidates && response.candidates[0] && response.candidates[0].content && response.candidates[0].content.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          console.log("Processing API response part:", part); // Log each part
+          if (part.text) {
+            console.log("Model text response:", part.text);
+            // Optionally display text response if needed, e.g., for debugging or info
+            // if (output) output.textContent = `Model response: ${part.text}`;
+          } else if (part.inlineData) { // Check for inlineData (camelCase)
+            const imageData = part.inlineData;
+            const newMimeType = imageData.mimeType; // Use mimeType
+            const newBase64Data = imageData.data;
+            const newImageDataUrl = `data:${newMimeType};base64,${newBase64Data}`;
+
+            const stateBeforeEdit = localStorage.getItem(EDITED_IMAGE_KEY) || localStorage.getItem(ORIGINAL_IMAGE_KEY);
+            if (stateBeforeEdit) {
+               localStorage.setItem(UNDO_IMAGE_KEY, stateBeforeEdit);
+               console.log("Stored previous state to UNDO buffer.");
+            }
+
+            localStorage.setItem(EDITED_IMAGE_KEY, newImageDataUrl);
+            console.log("Stored new edited image.");
+
+            updateEditedImageDisplay();
+            if (output) output.textContent = 'Edit complete.';
+            imageGenerated = true;
+            break; // Assume only one image part is expected
           }
+        }
+      }
 
-          localStorage.setItem(EDITED_IMAGE_KEY, newImageDataUrl);
-          console.log("Stored new edited image.");
-
-          updateEditedImageDisplay();
-          if (output) output.textContent = 'Edit complete.';
-
-      } else {
-           console.error("API Response did not contain expected image data:", response);
-           const textResponse = response?.candidates?.[0]?.content?.parts?.[0]?.text;
-           if (textResponse) {
-               let md = new MarkdownIt();
-               if (output) output.innerHTML = "Model returned text instead of image:<br>" + md.render(textResponse);
-           } else if (response?.promptFeedback?.blockReason) {
-               if (output) output.textContent = `Edit blocked: ${response.promptFeedback.blockReason}`;
-           } else {
-               if (output) output.textContent = 'Edit failed: Could not process response.';
-           }
+      if (!imageGenerated) {
+          console.error("API Response did not contain expected image data:", response);
+          const textResponse = response?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+          if (textResponse) {
+              let md = new MarkdownIt();
+              if (output) output.innerHTML = "Model returned text instead of image:<br>" + md.render(textResponse);
+          } else if (response?.promptFeedback?.blockReason) {
+              if (output) output.textContent = `Edit blocked: ${response.promptFeedback.blockReason}`;
+          } else {
+              if (output) output.textContent = 'Edit failed: Could not process response or no image generated.';
+          }
       }
 
     } catch (e) {
