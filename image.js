@@ -1,9 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import * as fs from "node:fs";
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 async function main() {
 
-  const ai = new GoogleGenAI({ apiKey: "AIzaSyCG9wvsfjxXNphg3kiinW5nOOb9GABwREI" });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   // Load the image from the local file system
   const imagePath = "input.jpg";
@@ -12,7 +15,7 @@ async function main() {
 
   // Prepare the content parts
   const contents = [
-    { text: "Can you take of his glasses and give him a batik shirt?" },
+    { text: "Can you take of his glasses and give him a suit and tie?" },
     {
       inlineData: {
         mimeType: "image/jpeg",
