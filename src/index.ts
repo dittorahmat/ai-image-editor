@@ -5,9 +5,19 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GoogleAIFileManager } from '@google/generative-ai/server';
+// --- DIAGNOSTIC: Check SDK version and import ---
+let genaiVersion = 'unknown';
+try {
+  // Use 'as any' to avoid TS18046 error
+  genaiVersion = require('@google/genai/package.json').version;
+} catch (e: any) {
+  console.log('[DIAG] Could not read @google/genai/package.json:', (e && e.message) ? e.message : e);
+}
+console.log(`[DIAG] Using @google/genai SDK version: ${genaiVersion}`);
+import { GoogleGenAI, Modality } from "@google/genai"; // Use @google/genai as requested
+// GoogleAIFileManager removed as it's not exported in this SDK version
 
+console.log('src/index.ts: Script started, imports loaded.');
 // Load environment variables
 dotenv.config();
 
@@ -35,7 +45,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
   fileFilter: (req, file, cb) => {
@@ -54,209 +64,165 @@ if (!apiKey) {
   console.error('src/index.ts: Missing GOOGLE_GEMINI_API_KEY in .env file');
   process.exit(1);
 }
-const genAI = new GoogleGenerativeAI(apiKey);
-const fileManager = new GoogleAIFileManager(apiKey);
+const ai = new GoogleGenAI({ apiKey: apiKey }); // Initialize @google/genai client
+console.log("src/index.ts: Gemini GenAI client initialized."); // Model specified in call
+// const fileManager = new GoogleAIFileManager(apiKey); // Removed - Not available in this SDK version
 
 // API endpoint for generating images
 app.post('/api/generate', upload.single('image'), async (req: Request, res: Response): Promise<void> => {
+  // --- DIAGNOSTIC LOGGING BLOCK ---
+  console.log('[DIAG] Entered /api/generate route handler');
+  console.log('[DIAG] req.headers:', req.headers);
   try {
-    console.log('src/index.ts: Received image generation request');
-    
-    // Validate request
+    const bodyStr = JSON.stringify(req.body);
+    console.log('[DIAG] req.body:', bodyStr.length > 500 ? bodyStr.slice(0, 500) + '...[truncated]' : bodyStr);
+  } catch (e: any) {
+    console.log('[DIAG] req.body: (unserializable)', (e && e.message) ? e.message : e);
+  }
+  console.log('[DIAG] req.file:', req.file);
+  // --- END DIAGNOSTIC LOGGING BLOCK ---
+  try {
     if (!req.file) {
       console.error('src/index.ts: No image file uploaded');
       res.status(400).json({ error: 'No image file uploaded' });
       return;
     }
+    const prompt: string = req.body.prompt || 'Transform this image';
+    const numImages: number = Math.min(parseInt(req.body.numImages || '6', 10), 6); // Max 6 images
+    console.log(`[DIAG] prompt: ${prompt}`);
+    console.log(`[DIAG] numImages: ${numImages}`);
+    console.log(`[DIAG] req.file info:`, req.file);
 
-    const prompt = req.body.prompt || 'Transform this image';
-    const numImages = Math.min(parseInt(req.body.numImages || '6'), 6); // Max 6 images
-    
-    console.log(`src/index.ts: Processing request with prompt: "${prompt}"`);
-    
-    // Upload the file to Gemini
-    const uploadResult = await fileManager.uploadFile(req.file.path, {
-      mimeType: req.file.mimetype,
-      displayName: req.file.originalname,
-    });
-    
-    const file = uploadResult.file;
-    console.log(`src/index.ts: Uploaded file ${file.displayName} to Gemini as: ${file.name}`);
-    
-    // Configure the model
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp-image-generation",
-    });
-    
-    // Generate images
-    const generationConfig = {
-      temperature: 1,
-      topP: 0.95,
-      topK: 40,
-      maxOutputTokens: 8192,
-      responseModalities: ["image", "text"],
-      responseMimeType: "text/plain",
-    };
-
-    // Create a results directory if it doesn't exist
+    // Ensure results directory exists
     const resultsDir = path.join(__dirname, '../public/results');
     if (!fs.existsSync(resultsDir)) {
       fs.mkdirSync(resultsDir, { recursive: true });
     }
 
-    // We'll create independent chat sessions for each image in the generateImage function
-
-    // Define a function to generate a single image independently
+    // --- Image Generation Logic ---
+    // src/index.ts: Generate a single image using Gemini API (independent, parallel, old style)
     const generateImage = async (index: number): Promise<string | null> => {
       try {
-        console.log(`src/index.ts: Starting generation of image ${index + 1} of ${numImages}`);
-        
-        // Create a new chat session for each image, structured like the example
-        console.log(`src/index.ts: Creating new chat session with history for image ${index + 1}`);
-        
-        const fullPrompt = prompt;
-        console.log(`src/index.ts: Using prompt for image ${index + 1}: "${fullPrompt}"`);
-        
-        // Create chat session with history following the example structure
-        const chatSession = model.startChat({
-          generationConfig,
-          history: [
-            {
-              role: "user",
-              parts: [
-                {
-                  fileData: {
-                    mimeType: file.mimeType,
-                    fileUri: file.uri,
-                  },
-                },
-                { text: fullPrompt },
-              ],
-            },
-          ],
-        });
-        
-        // Send a simple message to trigger the generation
-        console.log(`src/index.ts: Sending generation trigger message for image ${index + 1}`);
-        const result = await chatSession.sendMessage("Generate an image based on the prompt and file");
-        
-        console.log(`src/index.ts: Received response for image ${index + 1}`);
-        const candidates = result.response.candidates || [];
-        console.log(`src/index.ts: Found ${candidates.length} candidates in response for image ${index + 1}`);
-        
-        // Log the text response if available
+        // Read and encode the uploaded image file
+        let fileBase64 = "";
         try {
-          const textResponse = result.response.text();
-          console.log(`src/index.ts: Text response for image ${index + 1}: "${textResponse}"`);
-        } catch (err) {
-          console.log(`src/index.ts: No text response available for image ${index + 1}`);
+          const fileBuffer = fs.readFileSync(req.file!.path);
+          fileBase64 = fileBuffer.toString("base64");
+          console.log(`src/index.ts: [generateImage] Read file for image ${index + 1}, size: ${fileBuffer.length} bytes`);
+        } catch (err: any) {
+          console.error(`src/index.ts: [generateImage] Error reading file for image ${index + 1}:`, err?.message || err);
+          return null;
         }
-        
-        // Log response structure (removing potentially large data properties)
-        const responseClone = JSON.parse(JSON.stringify(result.response));
-        // Remove potentially large binary data before logging
-        if (responseClone.candidates) {
-          responseClone.candidates.forEach((candidate: any) => {
-            if (candidate?.content?.parts) {
-              candidate.content.parts.forEach((part: any) => {
-                if (part.inlineData && part.inlineData.data) {
-                  part.inlineData.data = `[BINARY_DATA_LENGTH:${part.inlineData.data.length}]`;
-                }
-              });
-            }
+
+        // Prepare Gemini API request
+        const contents = [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: req.file!.mimetype,
+              data: fileBase64,
+            },
+          },
+        ];
+
+        // Call Gemini API (no chat session, no history)
+        let response;
+        try {
+          // Use ai.models.generateContent with specified model and modalities
+          response = await ai.models.generateContent({
+            model: "gemini-2.0-flash-exp-image-generation", // Use specified model
+            contents: contents,
+            config: {
+              responseModalities: [Modality.TEXT, Modality.IMAGE], // Request Image modality
+            },
           });
+          console.log(`src/index.ts: [generateImage] Gemini API response received for image ${index + 1}`);
+        } catch (apiErr: any) {
+          console.error(`src/index.ts: [generateImage] Gemini API error for image ${index + 1}:`, apiErr?.message || apiErr);
+          return null;
         }
-        console.log(`src/index.ts: Response structure for image ${index + 1}:`, JSON.stringify(responseClone, null, 2));
-        
-        // Process the response
-        for (let candidate_index = 0; candidate_index < candidates.length; candidate_index++) {
-          const parts = candidates[candidate_index]?.content?.parts || [];
-          console.log(`src/index.ts: Processing ${parts.length} parts in candidate ${candidate_index} for image ${index + 1}`);
-          
-          for (let part_index = 0; part_index < parts.length; part_index++) {
-            const part = parts[part_index];
-            console.log(`src/index.ts: Part ${part_index} type:`, part.text ? 'text' : part.inlineData ? 'inlineData' : 'unknown');
-            
-            if (part.text) {
-              console.log(`src/index.ts: Part ${part_index} has text content: "${part.text.substring(0, 100)}${part.text.length > 100 ? '...' : ''}"`);
-            }
-            
-            if (part.inlineData) {
-              console.log(`src/index.ts: Found inline data in part ${part_index} for image ${index + 1}`);
-              const uniqueId = `${Date.now()}-${index}-${candidate_index}-${part_index}`;
-              const extension = part.inlineData.mimeType.split('/')[1];
-              const filename = `img-${uniqueId}.${extension}`;
-              const filePath = path.join(resultsDir, filename);
-              
-              // Save the image to the public directory
-              fs.writeFileSync(filePath, Buffer.from(part.inlineData.data, 'base64'));
-              console.log(`src/index.ts: Saved generated image ${index + 1} to ${filePath}`);
-              
-              // Return the image path
+
+        // Save the generated image (if any)
+        const parts = response?.candidates?.[0]?.content?.parts || [];
+        for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+          const part = parts[partIndex];
+          if (part.inlineData) {
+            const uniqueId = `${Date.now()}-${index}-${partIndex}`;
+            const ext = part.inlineData.mimeType?.split("/")[1] || "jpg";
+            const filename = `img-${uniqueId}.${ext}`;
+            const filePath = path.join(resultsDir, filename);
+            try {
+              // Ensure data exists and is a string before creating buffer
+              if (typeof part.inlineData.data === 'string') {
+                fs.writeFileSync(filePath, Buffer.from(part.inlineData.data, "base64"));
+                console.log(`src/index.ts: [generateImage] Saved image ${index + 1} as ${filePath}`);
+                return `/results/${filename}`;
+              } else {
+                console.error(`src/index.ts: [generateImage] Invalid or missing image data for part ${partIndex} in image ${index + 1}`);
+              }
+              console.log(`src/index.ts: [generateImage] Saved image ${index + 1} as ${filePath}`);
               return `/results/${filename}`;
+            } catch (saveErr: any) {
+              console.error(`src/index.ts: [generateImage] Error saving image ${index + 1}:`, saveErr?.message || saveErr);
             }
           }
         }
-        
-        // No image was found in the response
-        console.error(`src/index.ts: No image data found in response for image ${index + 1}`);
+        console.error(`src/index.ts: [generateImage] No image data found in Gemini response for image ${index + 1}`);
         return null;
-      } catch (error: any) {
-        console.error(`src/index.ts: Error generating image ${index + 1}:`, error);
-        // Try to extract more detailed error information
-        if (error.errorDetails) {
-          console.error(`src/index.ts: Error details for image ${index + 1}:`, error.errorDetails);
-        }
+      } catch (err: any) {
+        console.error(`src/index.ts: [generateImage] Unexpected error for image ${index + 1}:`, err?.message || err);
         return null;
       }
     };
-    
-    // Function to execute all image generation promises in parallel
-    const executeAllInParallel = async (): Promise<(string | null)[]> => {
-      console.log(`src/index.ts: Setting up parallel execution for all ${numImages} images at once`);
-      
-      // Create promises for all images
-      const generationPromises = Array.from(
-        { length: numImages }, 
-        (_, i) => generateImage(i)
-      );
-      
-      // Execute all promises concurrently
-      console.log(`src/index.ts: Executing all ${numImages} image generations in parallel`);
-      return Promise.all(generationPromises);
-    };
-    
-    // Execute all generation processes in parallel
-    console.log(`src/index.ts: Starting parallel image generation for ${numImages} images`);
-    const results = await executeAllInParallel();
-    console.log(`src/index.ts: All image generation completed, had ${results.filter(Boolean).length} successful generations`);
-    
-    // Filter out failed generations (null values)
-    const generatedImages = results.filter(path => path !== null) as string[];
 
-    // Clean up the temporary uploaded file
+    // Run all image generations in parallel (independent)
+    const generationPromises: Promise<string | null>[] = [];
+    for (let i = 0; i < numImages; i++) {
+      generationPromises.push(generateImage(i));
+    }
+    let generatedImages: string[] = [];
+    try {
+      const results = await Promise.all(generationPromises);
+      generatedImages = results.filter((img): img is string => !!img);
+      console.log(`src/index.ts: Successfully generated ${generatedImages.length} images.`);
+    } catch (err: any) {
+      console.error("src/index.ts: Error during parallel image generation:", err?.message || err);
+    }
+    // Clean up the uploaded file
     try {
       fs.unlinkSync(req.file.path);
-    } catch (error) {
-      console.error('src/index.ts: Error deleting temporary file:', error);
+    } catch (err: any) {
+      console.error("src/index.ts: Error deleting uploaded file:", err?.message || err);
     }
-    
-    // Return the paths to the generated images
-    console.log(`src/index.ts: Successfully generated ${generatedImages.length} images`);
-    res.json({ images: generatedImages });
-    
-  } catch (error) {
+    // Respond to client
+    if (generatedImages.length > 0) {
+      res.json({ images: generatedImages });
+    } else {
+      res.status(500).json({ error: "Failed to generate images" });
+    }
+
+  }
+catch (error) {
     console.error('src/index.ts: Error processing image generation:', error);
+    // Ensure uploaded file is cleaned up even on error
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupErr) {
+        console.error('src/index.ts: Error deleting uploaded file during error handling:', cleanupErr);
+      }
+    }
     res.status(500).json({ error: 'Failed to generate images' });
   }
+  console.log('[DIAG] End of /api/generate handler reached');
 });
 
-// Routes
+// Serve the frontend
 app.get('/', (req: Request, res: Response): void => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 // Start the server
 app.listen(port, () => {
-  console.log(`src/index.ts: Server running at http://localhost:${port}`);
-}); 
+  console.log(`Server running at http://localhost:${port}`);
+});

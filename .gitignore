@@ -29,8 +29,19 @@ out/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
 
 # Application specific
 uploads/
 public/results/
+
+#images
+*.jpg
+*.png
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.bmp
+*.tiff
+*.ico

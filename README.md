@@ -59,7 +59,7 @@ npm run dev
 1. The user uploads a reference image
 2. The user provides a prompt for the transformation (e.g., "turn my character into a studio ghibli character")
 3. The application sends the image and prompt to the Gemini API
-4. The API processes the request and generates 6 different transformed versions of the image
+4. The backend uses the `gemini-2.0-flash-exp-image-generation` model via the `@google/genai` SDK to process the request and generate up to 6 different transformed versions of the image in parallel.
 5. The application displays the generated images for the user to select from
 6. The user can download any of the generated images
 
@@ -67,7 +67,7 @@ npm run dev
 
 - TypeScript
 - Express.js
-- Gemini AI API
+- Google Gemini API (using `@google/genai` SDK and `gemini-2.0-flash-exp-image-generation` model)
 - HTML/CSS/JavaScript
 - Multer for file uploads
 
@@ -83,4 +83,4 @@ npm run dev
 
 ## License
 
-ISC 
+ISC
