@@ -129,6 +129,7 @@
             font-weight: 500;
             cursor: pointer;
             transition: background-color 0.3s;
+            vertical-align: middle; /* Align buttons */
         }
 
         .button:hover {
@@ -139,6 +140,16 @@
             background-color: #5f6368;
             cursor: not-allowed;
         }
+
+        .accent-button {
+             background-color: var(--accent-color);
+             padding: 8px 16px; /* Smaller padding */
+             font-size: 0.9rem;
+             margin-left: 15px; /* Space from heading */
+        }
+         .accent-button:hover {
+             background-color: #d03c2f;
+         }
 
         .button-container {
             text-align: center;
@@ -151,6 +162,14 @@
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
+        .results-header {
+             display: flex;
+             align-items: center;
+             margin-bottom: 20px; /* Space below header */
+        }
+         .results-header h2 {
+             margin: 0; /* Remove default margin */
+         }
 
         .results-container {
             display: grid;
@@ -299,7 +318,10 @@
         </div>
 
         <div class="results-section hide" id="resultsSection">
-            <h2>Generated Images</h2>
+             <div class="results-header">
+                 <h2>Generated Images</h2>
+                 <button id="clearImagesButton" class="button accent-button hide">Clear Saved Images</button>
+             </div>
             <div class="results-container" id="resultsContainer">
                 <!-- Results will be added here by JavaScript -->
             </div>
@@ -322,6 +344,7 @@
         const resultsContainer = document.getElementById('resultsContainer');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const errorMessage = document.getElementById('errorMessage');
+        // Added clear button reference later in the script
 
         // Selected file
         let selectedFile = null;
@@ -329,6 +352,7 @@
         // Event listeners
         imageUpload.addEventListener('change', handleFileSelect);
         generateButton.addEventListener('click', generateImages);
+        // Add listener for clear button later
 
         // Handle file selection
         function handleFileSelect(event) {
@@ -336,7 +360,7 @@
             if (file) {
                 selectedFile = file;
                 fileName.textContent = file.name;
-                
+
                 // Preview the image
                 const reader = new FileReader();
                 reader.onload = function(e) {
@@ -372,11 +396,11 @@
             }
 
             const prompt = promptInput.value.trim() || 'turn my character into a studio ghibli character';
-            
+
             // Show loading overlay
             loadingOverlay.style.display = 'flex';
             hideError();
-            
+
             // Create form data
             const formData = new FormData();
             formData.append('image', selectedFile);
@@ -396,49 +420,82 @@
                 }
 
                 const data = await response.json();
-                displayResults(data.images);
-                
+                // Log received data
+                console.log('[DEBUG] Received data from /api/generate:', data);
+                // Save the received image data objects to IndexedDB
+                if (data.images && Array.isArray(data.images)) {
+                     // Save to IndexedDB instead of localStorage
+                    try {
+                        await saveImagesToDB(data.images); // Call new DB save function
+                        console.log('[DEBUG] Successfully saved images to IndexedDB.');
+                        displayResults(data.images); // Display after successful save
+                    } catch (dbError) {
+                        console.error('[DEBUG] Failed to save images to IndexedDB:', dbError);
+                        showError('Failed to save generated images to browser storage.');
+                        // Optionally still display results even if saving failed?
+                        // displayResults(data.images);
+                    }
+                } else if (data.images && data.images.length === 0) {
+                    // Handle case where server returned empty array (e.g., all generations failed)
+                     resultsContainer.innerHTML = '<i>No images were successfully generated.</i>';
+                     resultsSection.classList.remove('hide');
+                     resultsSection.classList.add('show');
+                     // Ensure clear button is hidden if no images generated
+                     const clearBtn = document.getElementById('clearImagesButton');
+                     if(clearBtn) clearBtn.classList.add('hide');
+                } else {
+                     showError('Received invalid image data from server.');
+                }
             } catch (error) {
-                console.error('Error generating images:', error);
-                showError(error.message || 'An error occurred during image generation');
+                 // Handle fetch errors or errors before DB saving attempt
+                console.error('Error during image generation process:', error);
+                 showError(error.message || 'An error occurred during image generation');
             } finally {
                 // Hide loading overlay
                 loadingOverlay.style.display = 'none';
             }
         }
 
-        // Display results
-        function displayResults(images) {
+        // Display results from an array of image objects { mimeType, data }
+        function displayResults(imageObjects) {
+            console.log('[DEBUG] displayResults called with:', imageObjects); // Log input to displayResults
+            const clearBtn = document.getElementById('clearImagesButton'); // Get clear button ref
+
             // Clear previous results
             resultsContainer.innerHTML = '';
-            
-            if (images && images.length > 0) {
-                // Show results section
+
+            if (imageObjects && imageObjects.length > 0) {
+                // Show results section and clear button
                 resultsSection.classList.remove('hide');
                 resultsSection.classList.add('show');
-                
+                if(clearBtn) clearBtn.classList.remove('hide'); // Show clear button
+
                 // Create result cards
-                images.forEach((imagePath, index) => {
+                imageObjects.forEach((imageObj, index) => {
                     // Create result card
                     const card = document.createElement('div');
                     card.className = 'result-card';
-                    
+
                     // Create image
                     const img = document.createElement('img');
-                    img.src = imagePath;
+                    // Use data URL for the image source
+                    const dataUrl = `data:${imageObj.mimeType};base64,${imageObj.data}`;
+                    // console.log(`[DEBUG] Setting img.src for index ${index}:`, dataUrl.substring(0, 100) + (dataUrl.length > 100 ? '...' : '')); // Log truncated data URL
+                    img.src = dataUrl;
                     img.alt = `Generated Image ${index + 1}`;
                     img.loading = 'lazy';
-                    
+
                     // Create controls
                     const controls = document.createElement('div');
                     controls.className = 'result-controls';
-                    
+
                     // Download button
                     const downloadBtn = document.createElement('button');
                     downloadBtn.className = 'control-button';
                     downloadBtn.textContent = 'Download';
-                    downloadBtn.addEventListener('click', () => downloadImage(imagePath));
-                    
+                    // Pass mimeType and data to download function
+                    downloadBtn.addEventListener('click', () => downloadImage(imageObj.mimeType, imageObj.data, index));
+
                     // Append elements
                     controls.appendChild(downloadBtn);
                     card.appendChild(img);
@@ -446,15 +503,23 @@
                     resultsContainer.appendChild(card);
                 });
             } else {
-                showError('No images were generated. Please try again.');
+                // No images to display
+                 resultsContainer.innerHTML = '<i>No images to display.</i>';
+                 resultsSection.classList.remove('hide'); // Keep section visible to show message
+                 resultsSection.classList.add('show');
+                 if(clearBtn) clearBtn.classList.add('hide'); // Hide clear button
+                 // showError('No images were generated or loaded.');
             }
         }
 
-        // Download image
-        function downloadImage(imagePath) {
+        // Download image using data URL
+        function downloadImage(mimeType, base64Data, index) {
             const link = document.createElement('a');
-            link.href = imagePath;
-            link.download = `gemini-generation-${Date.now()}.png`;
+            // Create data URL
+            link.href = `data:${mimeType};base64,${base64Data}`;
+            // Determine file extension from mimeType
+            const extension = mimeType.split('/')[1] || 'png';
+            link.download = `gemini-generation-${index + 1}-${Date.now()}.${extension}`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -471,5 +536,192 @@
             errorMessage.style.display = 'none';
         }
     </script>
+    <script>
+        // --- IndexedDB Functions ---
+        const DB_NAME = 'geminiImagesDB';
+        const STORE_NAME = 'generatedImages';
+        const DB_VERSION = 1;
+        let db = null; // Hold the db instance
+
+        // Function to open the IndexedDB database
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                if (db) {
+                    resolve(db);
+                    return;
+                }
+                console.log('[DEBUG] Opening IndexedDB...');
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onerror = (event) => {
+                    console.error('[DEBUG] IndexedDB error:', event.target.error);
+                    reject('IndexedDB error: ' + event.target.error);
+                };
+
+                request.onsuccess = (event) => {
+                    console.log('[DEBUG] IndexedDB opened successfully.');
+                    db = event.target.result;
+                    resolve(db);
+                };
+
+                // This event only executes if the version number changes
+                // or the database is created for the first time.
+                request.onupgradeneeded = (event) => {
+                    console.log('[DEBUG] IndexedDB upgrade needed.');
+                    const tempDb = event.target.result;
+                    if (!tempDb.objectStoreNames.contains(STORE_NAME)) {
+                        console.log(`[DEBUG] Creating object store: ${STORE_NAME}`);
+                        tempDb.createObjectStore(STORE_NAME, { autoIncrement: true });
+                    }
+                };
+            });
+        }
+
+        // Function to save images to IndexedDB (clears existing first)
+        async function saveImagesToDB(images) {
+            const currentDb = await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = currentDb.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+
+                // Clear existing images first
+                const clearRequest = store.clear();
+
+                clearRequest.onsuccess = () => {
+                    console.log('[DEBUG] Cleared existing images from DB.');
+                    // Add new images
+                    let count = 0;
+                    if (!images || images.length === 0) {
+                        // If no images to add, resolve after clearing
+                        // Transaction oncomplete will handle this
+                        return;
+                    }
+                    images.forEach(image => {
+                        const addRequest = store.add(image);
+                        addRequest.onsuccess = () => {
+                            count++;
+                            // Note: Transaction oncomplete is the reliable indicator of success
+                        };
+                         addRequest.onerror = (event) => {
+                             console.error('[DEBUG] Error adding image to DB:', event.target.error);
+                             // Don't reject immediately, let transaction handle it
+                         };
+                    });
+                };
+                 clearRequest.onerror = (event) => {
+                     console.error('[DEBUG] Error clearing DB store:', event.target.error);
+                     reject('Failed to clear DB store: ' + event.target.error);
+                 };
+
+                transaction.oncomplete = () => {
+                    console.log('[DEBUG] Save transaction completed.');
+                    resolve();
+                };
+
+                transaction.onerror = (event) => {
+                    console.error('[DEBUG] Save transaction error:', event.target.error);
+                    reject('DB save transaction error: ' + event.target.error);
+                };
+            });
+        }
+
+        // Function to load all images from IndexedDB
+        async function loadImagesFromDB() {
+            const currentDb = await openDB();
+            return new Promise((resolve, reject) => {
+                 const transaction = currentDb.transaction([STORE_NAME], 'readonly');
+                 const store = transaction.objectStore(STORE_NAME);
+                 const getAllRequest = store.getAll(); // Get all records
+
+                 getAllRequest.onsuccess = (event) => {
+                     console.log('[DEBUG] Successfully loaded images from DB.');
+                     resolve(event.target.result || []); // Resolve with images array or empty array
+                 };
+
+                 getAllRequest.onerror = (event) => {
+                     console.error('[DEBUG] Error loading images from DB:', event.target.error);
+                     reject('Failed to load images from DB: ' + event.target.error);
+                 };
+
+                 transaction.onerror = (event) => {
+                     // Handle transaction errors separately if needed, though getAllRequest.onerror might cover it
+                     console.error('[DEBUG] Load transaction error:', event.target.error);
+                     reject('DB load transaction error: ' + event.target.error);
+                 };
+            });
+        }
+
+         // Function to clear all images from IndexedDB
+         async function clearImagesFromDB() {
+             console.log('[DEBUG] clearImagesFromDB called.');
+             hideError(); // Hide any previous errors
+             try {
+                 const currentDb = await openDB();
+                 await new Promise((resolve, reject) => {
+                     const transaction = currentDb.transaction([STORE_NAME], 'readwrite');
+                     const store = transaction.objectStore(STORE_NAME);
+                     const clearRequest = store.clear();
+
+                     clearRequest.onsuccess = () => {
+                         console.log('[DEBUG] DB store cleared successfully.');
+                     };
+                     clearRequest.onerror = (event) => {
+                          console.error('[DEBUG] Error clearing DB store:', event.target.error);
+                          reject('Failed to clear DB store: ' + event.target.error);
+                     };
+
+                     transaction.oncomplete = () => {
+                         console.log('[DEBUG] Clear transaction completed.');
+                         // Update UI after successful clear
+                         resultsContainer.innerHTML = '<i>Saved images cleared.</i>';
+                         const clearBtn = document.getElementById('clearImagesButton');
+                         if(clearBtn) clearBtn.classList.add('hide'); // Hide button after clearing
+                         resolve();
+                     };
+                     transaction.onerror = (event) => {
+                         console.error('[DEBUG] Clear transaction error:', event.target.error);
+                         reject('DB clear transaction error: ' + event.target.error);
+                     };
+                 });
+             } catch (error) {
+                 console.error('[DEBUG] Failed to clear images from IndexedDB:', error);
+                 showError('Could not clear saved images.');
+             }
+         }
+
+
+        // Load initial images from IndexedDB on startup
+        async function loadInitialImages() {
+            console.log('[DEBUG] loadInitialImages called.');
+            const clearBtn = document.getElementById('clearImagesButton'); // Get button ref here too
+            try {
+                const images = await loadImagesFromDB();
+                if (images && images.length > 0) {
+                     console.log(`[DEBUG] Found ${images.length} images in IndexedDB. Displaying...`);
+                     displayResults(images); // This will show the button via displayResults logic
+                } else {
+                     console.log('[DEBUG] No images found in IndexedDB.');
+                     // Optionally clear the results container if no images are loaded
+                     resultsContainer.innerHTML = '<i>No previously saved images found.</i>';
+                     resultsSection.classList.remove('hide');
+                     resultsSection.classList.add('show');
+                     if(clearBtn) clearBtn.classList.add('hide'); // Ensure button is hidden if no images loaded
+                }
+            } catch (error) {
+                console.error('[DEBUG] Failed to load initial images from IndexedDB:', error);
+                showError('Could not load previously saved images.');
+                 if(clearBtn) clearBtn.classList.add('hide'); // Hide button on load error
+            }
+        }
+
+        // Add event listener after DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            const clearBtn = document.getElementById('clearImagesButton');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', clearImagesFromDB);
+            }
+            loadInitialImages(); // Load images after setting up listener
+        });
+    </script>
 </body>
-</html> 
+</html>

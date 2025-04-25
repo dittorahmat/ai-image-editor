@@ -31,22 +31,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
-});
-
+// Configure multer for file uploads in memory
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(), // Use memory storage instead of disk
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
   fileFilter: (req, file, cb) => {
     // Accept only image files
@@ -101,18 +88,16 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
 
     // --- Image Generation Logic ---
     // src/index.ts: Generate a single image using Gemini API (independent, parallel, old style)
-    const generateImage = async (index: number): Promise<string | null> => {
+    // Returns image data object or null
+    const generateImage = async (index: number): Promise<{ mimeType: string; data: string } | null> => {
       try {
-        // Read and encode the uploaded image file
-        let fileBase64 = "";
-        try {
-          const fileBuffer = fs.readFileSync(req.file!.path);
-          fileBase64 = fileBuffer.toString("base64");
-          console.log(`src/index.ts: [generateImage] Read file for image ${index + 1}, size: ${fileBuffer.length} bytes`);
-        } catch (err: any) {
-          console.error(`src/index.ts: [generateImage] Error reading file for image ${index + 1}:`, err?.message || err);
-          return null;
+        // Encode the uploaded image file buffer from memory
+        if (!req.file || !req.file.buffer) {
+            console.error(`src/index.ts: [generateImage] No file buffer available for image ${index + 1}`);
+            return null;
         }
+        const fileBase64 = req.file.buffer.toString("base64");
+        console.log(`src/index.ts: [generateImage] Using file buffer for image ${index + 1}, size: ${req.file.buffer.length} bytes`);
 
         // Prepare Gemini API request
         const contents = [
@@ -147,23 +132,15 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
         for (let partIndex = 0; partIndex < parts.length; partIndex++) {
           const part = parts[partIndex];
           if (part.inlineData) {
-            const uniqueId = `${Date.now()}-${index}-${partIndex}`;
-            const ext = part.inlineData.mimeType?.split("/")[1] || "jpg";
-            const filename = `img-${uniqueId}.${ext}`;
-            const filePath = path.join(resultsDir, filename);
-            try {
-              // Ensure data exists and is a string before creating buffer
-              if (typeof part.inlineData.data === 'string') {
-                fs.writeFileSync(filePath, Buffer.from(part.inlineData.data, "base64"));
-                console.log(`src/index.ts: [generateImage] Saved image ${index + 1} as ${filePath}`);
-                return `/results/${filename}`;
-              } else {
-                console.error(`src/index.ts: [generateImage] Invalid or missing image data for part ${partIndex} in image ${index + 1}`);
-              }
-              console.log(`src/index.ts: [generateImage] Saved image ${index + 1} as ${filePath}`);
-              return `/results/${filename}`;
-            } catch (saveErr: any) {
-              console.error(`src/index.ts: [generateImage] Error saving image ${index + 1}:`, saveErr?.message || saveErr);
+            // Return image data directly instead of saving to file
+            if (typeof part.inlineData.data === 'string') {
+              console.log(`src/index.ts: [generateImage] Found image data for image ${index + 1}`);
+              return {
+                mimeType: part.inlineData.mimeType || 'image/png', // Default MIME type
+                data: part.inlineData.data
+              };
+            } else {
+              console.error(`src/index.ts: [generateImage] Invalid or missing image data for part ${partIndex} in image ${index + 1}`);
             }
           }
         }
@@ -176,24 +153,20 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
     };
 
     // Run all image generations in parallel (independent)
-    const generationPromises: Promise<string | null>[] = [];
+    const generationPromises: Promise<{ mimeType: string; data: string } | null>[] = [];
     for (let i = 0; i < numImages; i++) {
       generationPromises.push(generateImage(i));
     }
-    let generatedImages: string[] = [];
+    let generatedImages: { mimeType: string; data: string }[] = [];
     try {
       const results = await Promise.all(generationPromises);
-      generatedImages = results.filter((img): img is string => !!img);
+      // Filter out nulls and type guard the results
+      generatedImages = results.filter((img): img is { mimeType: string; data: string } => !!img);
       console.log(`src/index.ts: Successfully generated ${generatedImages.length} images.`);
     } catch (err: any) {
       console.error("src/index.ts: Error during parallel image generation:", err?.message || err);
     }
-    // Clean up the uploaded file
-    try {
-      fs.unlinkSync(req.file.path);
-    } catch (err: any) {
-      console.error("src/index.ts: Error deleting uploaded file:", err?.message || err);
-    }
+    // No file cleanup needed with memory storage
     // Respond to client
     if (generatedImages.length > 0) {
       res.json({ images: generatedImages });
@@ -204,14 +177,7 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
   }
 catch (error) {
     console.error('src/index.ts: Error processing image generation:', error);
-    // Ensure uploaded file is cleaned up even on error
-    if (req.file && req.file.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupErr) {
-        console.error('src/index.ts: Error deleting uploaded file during error handling:', cleanupErr);
-      }
-    }
+    // No file cleanup needed with memory storage
     res.status(500).json({ error: 'Failed to generate images' });
   }
   console.log('[DIAG] End of /api/generate handler reached');
