@@ -80,11 +80,6 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
     console.log(`[DIAG] numImages: ${numImages}`);
     console.log(`[DIAG] req.file info:`, req.file);
 
-    // Ensure results directory exists
-    const resultsDir = path.join(__dirname, '../public/results');
-    if (!fs.existsSync(resultsDir)) {
-      fs.mkdirSync(resultsDir, { recursive: true });
-    }
 
     // --- Image Generation Logic ---
     // src/index.ts: Generate a single image using Gemini API (independent, parallel, old style)
