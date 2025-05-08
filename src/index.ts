@@ -74,7 +74,8 @@ app.post('/api/generate', upload.single('image'), async (req: Request, res: Resp
       res.status(400).json({ error: 'No image file uploaded' });
       return;
     }
-    const prompt: string = req.body.prompt || 'Transform this image';
+    //const prompt: string = req.body.prompt || 'Transform this image';
+    const prompt: string = req.body.prompt;
     const numImages: number = Math.min(parseInt(req.body.numImages || '6', 10), 6); // Max 6 images
     console.log(`[DIAG] prompt: ${prompt}`);
     console.log(`[DIAG] numImages: ${numImages}`);
